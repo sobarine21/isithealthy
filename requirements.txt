@@ -5,3 +5,4 @@ requests
 beautifulsoup4
 easyocr
 numpy==1.23.5
+pandas
