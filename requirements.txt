@@ -1,7 +1,6 @@
 streamlit
-paddleocr
-paddlepaddle 
 google-generativeai
 google-api-python-client 
 requests
 beautifulsoup4
+easyocr
