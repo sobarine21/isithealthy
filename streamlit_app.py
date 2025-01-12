@@ -1,5 +1,5 @@
 import os
-import paddleocr
+import easyocr
 import streamlit as st
 from PIL import Image
 import google.generativeai as genai
@@ -15,8 +15,8 @@ genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 GOOGLE_CX = st.secrets["GOOGLE_SEARCH_ENGINE_ID"]
 
-# Initialize PaddleOCR for text extraction
-ocr = paddleocr.PaddleOCR(use_angle_cls=True, lang='en')  # Correct initialization of PaddleOCR
+# Initialize EasyOCR for text extraction
+reader = easyocr.Reader(['en'])  # Initialize the OCR reader with English language
 
 # Function to interact with Google Search API
 def google_search(query):
@@ -33,12 +33,12 @@ def google_search(query):
         })
     return search_results
 
-# Function to extract text from image using PaddleOCR
+# Function to extract text from image using EasyOCR
 def extract_text_from_image(image_path):
-    result = ocr.ocr(image_path, cls=True)
+    result = reader.readtext(image_path)
     extracted_text = []
-    for line in result[0]:
-        text = line[1][0]
+    for detection in result:
+        text = detection[1]  # The detected text is in index 1
         extracted_text.append(text)
     return "\n".join(extracted_text)
 
@@ -64,17 +64,14 @@ def main():
     uploaded_image = st.file_uploader("Choose an image...", type=["png", "jpg", "jpeg"])
 
     if uploaded_image:
+        # Open the uploaded image
         image = Image.open(uploaded_image)
-        
-        # Save the uploaded image temporarily
         image_path = os.path.join("temp", uploaded_image.name)
-        if not os.path.exists("temp"):
-            os.makedirs("temp")
         image.save(image_path)
         
         st.image(image, caption='Uploaded Image.', use_column_width=True)
 
-        # Extract text from image using PaddleOCR
+        # Extract text from image using EasyOCR
         st.write("Extracting text from the image...")
         extracted_text = extract_text_from_image(image_path)
         st.text_area("Extracted Text", extracted_text, height=300)
