@@ -90,13 +90,29 @@ def google_search_nutrition(nutrition_data):
 
 # Function to visualize nutrition data
 def visualize_nutrition_data(nutrition_data):
-    labels = list(nutrition_data.keys())
-    values = [float(value.split()[0]) for value in nutrition_data.values()]
-    plt.figure(figsize=(8, 4))
-    plt.barh(labels, values, color='skyblue')
-    plt.xlabel("Amount")
-    plt.title("Nutritional Components")
-    st.pyplot(plt)
+    labels = []
+    values = []
+    
+    # Iterate through nutrition data and filter valid numeric values
+    for key, value in nutrition_data.items():
+        try:
+            # Only keep numeric values (handling strings that might not be numbers)
+            numeric_value = float(value.split()[0])  # Get the first number
+            labels.append(key)
+            values.append(numeric_value)
+        except ValueError:
+            # Skip non-numeric values (e.g., "Energy" or "Serving size")
+            continue
+    
+    # If valid numeric data exists, visualize it
+    if labels and values:
+        plt.figure(figsize=(8, 4))
+        plt.barh(labels, values, color='skyblue')
+        plt.xlabel("Amount")
+        plt.title("Nutritional Components")
+        st.pyplot(plt)
+    else:
+        st.write("No valid numeric nutrition data to visualize.")
 
 # Streamlit UI
 def main():
