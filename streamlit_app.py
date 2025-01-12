@@ -1,5 +1,5 @@
 import os
-import paddleocr as ocr
+import paddleocr
 import streamlit as st
 from PIL import Image
 import google.generativeai as genai
@@ -16,7 +16,7 @@ GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 GOOGLE_CX = st.secrets["GOOGLE_SEARCH_ENGINE_ID"]
 
 # Initialize PaddleOCR for text extraction
-ocr = PaddleOCR(use_angle_cls=True, lang='en')
+ocr = paddleocr.PaddleOCR(use_angle_cls=True, lang='en')  # Correct initialization of PaddleOCR
 
 # Function to interact with Google Search API
 def google_search(query):
@@ -65,7 +65,11 @@ def main():
 
     if uploaded_image:
         image = Image.open(uploaded_image)
+        
+        # Save the uploaded image temporarily
         image_path = os.path.join("temp", uploaded_image.name)
+        if not os.path.exists("temp"):
+            os.makedirs("temp")
         image.save(image_path)
         
         st.image(image, caption='Uploaded Image.', use_column_width=True)
