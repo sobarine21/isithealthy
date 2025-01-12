@@ -16,7 +16,7 @@ GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 GOOGLE_CX = st.secrets["GOOGLE_SEARCH_ENGINE_ID"]
 
 # Initialize PaddleOCR for text extraction
-ocr = paddleocr.OCR(use_angle_cls=True, lang='en')
+ocr = PaddleOCR(use_angle_cls=True, lang='en')
 
 # Function to interact with Google Search API
 def google_search(query):
