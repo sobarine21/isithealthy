@@ -1,117 +1,149 @@
+import os
 import streamlit as st
-import easyocr
-import matplotlib.pyplot as plt
 import google.generativeai as genai
-import pandas as pd
+from googleapiclient.discovery import build
 from PIL import Image
-import re
-import requests
+import easyocr
+import pandas as pd
+import matplotlib.pyplot as plt
 
-# Configure the Google Gemini AI API securely
+# Configure Gemini API key
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
-# Function to extract nutritional data from the label
-def extract_nutrition_data(image_path):
-    reader = easyocr.Reader(['en'])
-    results = reader.readtext(image_path)
-    nutrition_data = {}
+# Google Search API configuration
+GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+GOOGLE_CX = st.secrets["GOOGLE_SEARCH_ENGINE_ID"]
 
-    for result in results:
-        text = result[1]
-        match = re.match(r"^(.*?):\s*([\d.]+)\s*(.*)?$", text)
-        if match:
-            key = match.group(1).strip()
-            value = match.group(2).strip()
-            unit = match.group(3).strip() if match.group(3) else ""
-            nutrition_data[key] = f"{value} {unit}".strip()
+# Initialize EasyOCR
+reader = easyocr.Reader(['en'])
+
+# Function to extract nutrition data from an image
+def extract_nutrition_from_image(image_path):
+    results = reader.readtext(image_path)
+    extracted_text = [result[1] for result in results]
+    nutrition_data = {}
+    serving_info = None
+    
+    # Parse text to find nutrition fields
+    for line in extracted_text:
+        if "Energy" in line or "Calories" in line:
+            nutrition_data["Energy (kcal)"] = line.split()[-1].replace("kcal", "").strip()
+        elif "Total Fat" in line:
+            nutrition_data["Total Fat (g)"] = line.split()[-1].strip()
+        elif "Saturated Fat" in line:
+            nutrition_data["Saturated Fat (g)"] = line.split()[-1].strip()
+        elif "Protein" in line:
+            nutrition_data["Protein (g)"] = line.split()[-1].strip()
+        elif "Carbohydrate" in line:
+            nutrition_data["Carbohydrate (g)"] = line.split()[-1].strip()
+        elif "Sodium" in line:
+            nutrition_data["Sodium (mg)"] = line.split()[-1].strip()
+        elif "Serving size" in line:
+            serving_info = line
+    
+    # Add serving info if available
+    if serving_info:
+        nutrition_data["Serving Size"] = serving_info.split(":")[-1].strip()
+    
     return nutrition_data
 
-# Function to provide AI analysis on nutrition data
-def ai_nutrition_analysis(nutrition_data):
-    if not nutrition_data:
-        return "No data available for analysis."
-    
-    prompt = "Analyze the following nutritional label data and provide insights about its health benefits and risks:\n"
-    for key, value in nutrition_data.items():
-        prompt += f"{key}: {value}\n"
-    prompt += "\nProvide a summary of whether this is healthy and what improvements can be made."
-
+# Function to analyze nutrition data using Gemini AI
+def analyze_nutrition_with_gemini(nutrition_data):
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
+        if not nutrition_data:
+            return "No nutrition data found to analyze."
+        
+        analysis_prompt = "Analyze the following nutritional values:\n"
+        for key, value in nutrition_data.items():
+            analysis_prompt += f"{key}: {value}\n"
+        analysis_prompt += """
+        1. Assess if these values meet daily recommended needs.
+        2. Highlight any nutritional risks (e.g., high sodium or fat).
+        3. Suggest improvements for a healthier diet."""
+        
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(analysis_prompt)
         return response.text
     except Exception as e:
-        return f"Error analyzing nutritional data: {e}"
+        return f"Error analyzing with Gemini: {e}"
 
-# Function to visualize the nutritional data
+# Function to search articles on nutrition components
+def google_search_nutrition(nutrition_data):
+    try:
+        search_results = {}
+        if not nutrition_data:
+            return {"Error": "No nutrition data available for searching."}
+        
+        service = build("customsearch", "v1", developerKey=GOOGLE_API_KEY)
+        
+        for component, value in nutrition_data.items():
+            query = f"Health impact of {component.lower()}"
+            response = service.cse().list(q=query, cx=GOOGLE_CX).execute()
+            items = response.get("items", [])
+            search_results[component] = [
+                {"Title": item.get("title"), "URL": item.get("link"), "Snippet": item.get("snippet")}
+                for item in items
+            ]
+        return search_results
+    except Exception as e:
+        return {"Error": str(e)}
+
+# Function to visualize nutrition data
 def visualize_nutrition_data(nutrition_data):
-    labels = []
-    values = []
-
-    for key, value in nutrition_data.items():
-        try:
-            numeric_value = float(value.split()[0]) if value else None
-            if numeric_value is not None:
-                labels.append(key)
-                values.append(numeric_value)
-        except (ValueError, IndexError):
-            st.warning(f"Could not process value for {key}: {value}")
-
-    if not values:
-        st.error("No valid numeric data to visualize.")
-        return
-
+    labels = list(nutrition_data.keys())
+    values = [float(value.split()[0]) for value in nutrition_data.values()]
     plt.figure(figsize=(8, 4))
     plt.barh(labels, values, color='skyblue')
     plt.xlabel("Amount")
     plt.title("Nutritional Components")
     st.pyplot(plt)
 
-# Function to search for related articles
-def search_related_articles(query):
-    try:
-        search_url = f"https://api.duckduckgo.com/?q={query}&format=json"
-        response = requests.get(search_url)
-        results = response.json()
-        return [result["Text"] for result in results.get("RelatedTopics", []) if "Text" in result]
-    except Exception as e:
-        return [f"Error fetching articles: {e}"]
-
-# Main Streamlit App
+# Streamlit UI
 def main():
-    st.title("Nutritional Label Analysis and Insights")
-    st.write("Upload an image of a nutritional label to analyze its contents and get health insights.")
+    st.title("Enhanced Nutrition Label Analysis with AI")
+    st.write("Upload a nutrition label image to extract and analyze its contents.")
 
-    # Upload Image
-    uploaded_file = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
-    if uploaded_file is not None:
-        image = Image.open(uploaded_file)
-        st.image(image, caption="Uploaded Image", use_column_width=True)
-
-        # Save image locally
-        image_path = "uploaded_image.png"
+    uploaded_image = st.file_uploader("Choose an image...", type=["png", "jpg", "jpeg"])
+    
+    if uploaded_image:
+        # Display uploaded image
+        image = Image.open(uploaded_image)
+        image_path = os.path.join("temp", uploaded_image.name)
+        os.makedirs("temp", exist_ok=True)
         image.save(image_path)
-
-        # Extract nutritional data
-        nutrition_data = extract_nutrition_data(image_path)
-        st.write("Extracted Nutritional Data:")
+        
+        st.image(image, caption="Uploaded Nutrition Label", use_column_width=True)
+        
+        # Extract nutrition data
+        st.write("Extracting nutritional information...")
+        nutrition_data = extract_nutrition_from_image(image_path)
+        st.write("Extracted Nutrition Data:")
         st.json(nutrition_data)
-
-        # Provide AI-based analysis
-        st.write("AI-Based Nutritional Analysis:")
-        ai_analysis = ai_nutrition_analysis(nutrition_data)
-        st.write(ai_analysis)
-
-        # Visualize nutritional data
-        st.write("Visualization of Nutritional Data:")
+        
+        # Visualize data
+        st.write("Nutritional Data Visualization:")
         visualize_nutrition_data(nutrition_data)
-
+        
+        # Analyze nutrition data using AI
+        st.write("Analyzing nutritional impact...")
+        analysis_result = analyze_nutrition_with_gemini(nutrition_data)
+        st.text_area("AI Analysis", analysis_result, height=300)
+        
         # Search related articles
-        st.write("Related Articles on Nutritional Components:")
-        article_query = "health benefits of " + ", ".join(nutrition_data.keys())
-        articles = search_related_articles(article_query)
-        for article in articles:
-            st.write("- ", article)
+        st.write("Searching for related articles...")
+        search_results = google_search_nutrition(nutrition_data)
+        
+        if "Error" in search_results:
+            st.error(search_results["Error"])
+        else:
+            for component, articles in search_results.items():
+                st.write(f"Articles for {component}:")
+                for article in articles:
+                    st.write(f"- **{article['Title']}**: [Link]({article['URL']})")
+                    st.write(f"  _Snippet_: {article['Snippet']}")
+        
+        # Cleanup temporary image file
+        os.remove(image_path)
 
 if __name__ == "__main__":
     main()
